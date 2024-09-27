@@ -1,0 +1,508 @@
+
+###################################
+Create 2 instances
+###################################
+1. Launch 2 EC2 linux instance using the ami, ami-0b0ea68c435eb488d, whose names are as follows:
+proname(namenode)
+prodata1(datanode)
+
+search and select the ami as follows:
+ami-0b0ea68c435eb488d
+
+2. Attention, these instances should be in the same Internet group with all traffic.
+
+
+###################################
+Passphrase-less SSH
+###################################
+
+1. Open Putty to connect to 2 instances.
+2. Generate a pair of authentication keys on each instance using:
+
+ssh-keygen -t rsa -P '' -f ~/.ssh/id_rsa
+
+3. Append each instance's public key(id_rsa.pub) to other instances' authorized_keys
+
+cat ~/.ssh/id_rsa.pub
+
+vim ~/.ssh/authorized_keys
+
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCgWdiluOMCDkVVpEtbSljv4R/iEP28T96bg63Q4NLI1jMPQ+EweZITrt1AoiFAkcmZ+fKMnogcz7u5dUqXU2PTfEjw5Hk8DAzN+7nGzBN7Auqb1Ha5dNzD7JotZNJ8oyIV4p28zDVgcZuwcda0dwxO082+t6WWiGJMGOcLPmqdpyfpg/e/w9WHW8qoKsLweoUuObWYtXFu3MUF8Nh38VRxK2HdYLTklVvATpnjPKABsYLnT4Pi4aSUcCd5UlGLEM89lr23KDlv3b2CbR7JluSXJEn7VyFXIVlFvFx/W0lSDy1cMZ+4tbL/3wTPxNCIlFVcqa7J85Fhf9KFkSG9XZ6V ubuntu@ip-172-31-88-158
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC53Zi95s1iFtncd+gXj5f+a5aSgnuJiRVaxBYcggFctE5HW6rQ0jGUnNwWJXf8xLkRznXsq0606xP6lTJXA+hjh7o1EdRSiaO+VLpUAYgpe9/bRVqLBrpsUKE1GYv8bjQ4s4TgUoiC4OtoV9LoUvdhT75lK83TjVA9s7JJsz8OozIXc/GAU534jftf1ygr4a6l26E8ORt4frz0Qe3ovNl6cyksyJGeUr4DJhZgNSowUIddNc/CCh0BAKPjgzFIcE8frI05ex2q/fqfTxusJ/Rdat/oE2zhLpTqgXQjgvnlPSB0TzM7ui4qpQ1RsKkdGCCO9jY/KBF5QmKKrL3NVfKN ubuntu@ip-172-31-82-141
+
+
+
+copy the public key of all these instances. paste these public keys into the authorized_keys
+
+4. For each instance:
+sudo vim /etc/hosts
+
+add the content:
+
+172.31.88.158 master
+172.31.82.141 slave1
+
+
+
+//here you should write the private IP and this is just an example of my implementation. Because AWS will change public IP if you stop and start again.
+
+5. Then try ssh slave1 for example, we are done.
+
+##################################################
+hadoop installation on namenode and datanodes
+##################################################
+
+1. Ubuntu don't have java. Install java above
+
+sudo apt-get update
+sudo apt-get install openjdk-8-jdk -y
+
+Here you could use the follow command to see the java home path
+ls /usr/lib/jvm
+
+
+vim ~/.bash_profile
+export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+source ~/.bash_profile
+
+2. Download and install hadoop-2.6.5 on the master node
+cd ~
+
+wget https://archive.apache.org/dist/hadoop/common/hadoop-2.6.5/hadoop-2.6.5.tar.gz
+
+tar -xvzf hadoop-2.6.5.tar.gz 
+
+3. For all instances: add the content by:
+
+vim ~/.bash_profile
+
+export HADOOP_HOME=/home/ubuntu/hadoop-2.6.5
+export PATH=$PATH:$HADOOP_HOME/bin
+export PATH=$PATH:$HADOOP_HOME/sbin
+export HADOOP_MAPRED_HOME=$HADOOP_HOME
+export HADOOP_COMMON_HOME=$HADOOP_HOME
+export HADOOP_HDFS_HOME=$HADOOP_HOME
+export YARN_HOME=$HADOOP_HOME
+
+
+source ~/.bash_profile
+
+
+4. Configuration of Hadoop on the master node
+cd hadoop-2.6.5/etc/hadoop/
+
+vim core-site.xml
+
+<configuration>
+  <property>
+      <name>fs.defaultFS</name>
+      <value>hdfs://master:9000/</value>
+  </property>
+  <property>
+      <name>hadoop.tmp.dir</name>
+      <value>file:/home/ubuntu/hadoop-2.6.5/tmp</value>  
+  </property>
+</configuration>
+
+
+vim hdfs-site.xml
+
+<configuration>
+    <property>
+        <name>dfs.namenode.name.dir</name>
+        <value>file:/home/ubuntu/hadoop-2.6.5/dfs/name</value>
+    </property>
+    <property>
+        <name>dfs.datanode.data.dir</name>
+        <value>file:/home/ubuntu/hadoop-2.6.5/dfs/data</value>
+    </property>
+    <property>
+        <name>dfs.replication</name>
+        <value>3</value>
+    </property>
+</configuration>
+
+vim mapred-site.xml
+
+<configuration>
+    <property>
+        <name>mapreduce.framework.name</name>
+        <value>yarn</value>
+    </property>
+</configuration>
+
+
+vim yarn-site.xml
+
+<configuration>
+     <property>
+         <name>yarn.nodemanager.aux-services</name>
+         <value>mapreduce_shuffle</value>
+     </property>
+     <property>
+         <name>yarn.nodemanager.aux-services.mapreduce.shuffle.class</name>
+         <value>org.apache.hadoop.mapred.ShuffleHandler</value>
+     </property>
+     <property>
+         <name>yarn.resourcemanager.address</name>
+         <value>master:8032</value>
+     </property>
+     <property>
+         <name>yarn.resourcemanager.scheduler.address</name>
+         <value>master:8030</value>
+     </property>
+     <property>
+         <name>yarn.resourcemanager.resource-tracker.address</name>
+         <value>master:8035</value>
+     </property>
+     <property>
+         <name>yarn.resourcemanager.admin.address</name>
+         <value>master:8033</value>
+     </property>
+     <property>
+         <name>yarn.resourcemanager.webapp.address</name>
+         <value>master:8088</value>
+     </property>
+</configuration>
+
+
+vim hadoop-env.sh
+
+export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+export HADOOP_PREFIX=/home/ubuntu/hadoop-2.6.5 
+
+export HADOOP_CONF_DIR=/home/ubuntu/hadoop-2.6.5/etc/hadoop/
+export HADOOP_HOME=/home/ubuntu/hadoop-2.6.5
+
+export CLASSPATH=$CLASSPATH:$HADOOP_HOME/share/hadoop/*/lib/*.jar
+export CLASSPATH=$CLASSPATH:$HADOOP_HOME/share/hadoop/*/*.jar
+
+
+source hadoop-env.sh
+
+vim slaves
+slave1
+
+
+vim master
+master
+
+5. Then we need to copy the configuration to the slaves:
+cd ~
+
+scp -r hadoop-2.6.5 slave1:~
+
+
+Then we are done with the configuration.
+
+##################################################
+Start Hadoop and Test
+##################################################
+
+1. Change to hadoop directory
+cd hadoop-2.6.5
+2. Fist we need to format the namenode:
+
+bin/hdfs namenode -format
+
+3. Start the HDFS
+
+sbin/start-dfs.sh 
+
+4. Start the YARN
+
+sbin/start-yarn.sh
+
+5. To see the results, we need jps
+directly type:
+jps
+
+On namenode, we can see:
+Jps
+NameNode
+SecondaryNameNode
+ResourceManager
+
+On datanode, we can see:
+Jps
+DataNode
+NodeManager
+
+We already succesfully start hdfs and yarn.
+
+Here we skip the example of wordcount, if you want to check the environment, you can refer to the previous video tutorial, actually the steps are the same.
+
+Then we focus on the installation of Oozie.
+
+#stop yarn and hdfs
+
+sbin/stop-yarn.sh
+
+sbin/stop-dfs.sh
+
+cd ~
+
+wget https://archive.apache.org/dist/maven/maven-3/3.5.3/binaries/apache-maven-3.5.3-bin.tar.gz
+
+tar -xzvf apache-maven-3.5.3-bin.tar.gz
+
+vim ~/.bash_profile
+export M2_HOME=/home/ubuntu/apache-maven-3.5.3
+export PATH=$PATH:$M2_HOME/bin
+
+source ~/.bash_profile
+
+///to test
+mvn -version
+
+
+//install mysql
+
+sudo apt-get install mysql-server
+
+sudo apt install mysql-client
+
+sudo apt install libmysqlclient-dev
+
+during the process, you will be asked to enter the password for root to login mysql later, here I type root as password
+
+
+
+sudo ln -s /usr/lib/jvm/java-8-openjdk-amd64/lib /usr/lib/jvm/java-8-openjdk-amd64/Classes
+
+sudo cp /usr/lib/jvm/java-8-openjdk-amd64/lib/tools.jar /usr/lib/jvm/java-8-openjdk-amd64/jre/lib/tools.jar
+
+
+###Install Oozie
+
+cd ~
+wget https://archive.apache.org/dist/oozie/4.1.0/oozie-4.1.0.tar.gz
+tar -xzvf oozie-4.1.0.tar.gz
+
+cd oozie-4.1.0
+vim pom.xml
+
+#before using this command, in line 135 of pom.xml file, change http to https
+Replace http://repo1.maven.org/maven2/ with https://repo1.maven.org/maven2/
+
+Then 
+
+bin/mkdistro.sh -DskipTests -Dhadoopversion=2.6.5
+
+
+cp /home/ubuntu/oozie-4.1.0/distro/target/oozie-4.1.0-distro.tar.gz /home/ubuntu/oozie-4.1.0-distro.tar.gz
+
+cd ~
+
+mv oozie-4.1.0 backforoozie
+
+tar -xzvf oozie-4.1.0-distro.tar.gz
+
+
+vim ~/.bash_profile
+
+export OOZIE_HOME=/home/ubuntu/oozie-4.1.0
+export OOZIE_CONFIG=$OOZIE_HOME/conf
+export CLASSPATH=$CLASSPATH:$OOZIE_HOME/bin
+
+source ~/.bash_profile
+
+
+for all instances including slaves nodes
+
+vim hadoop-2.6.5/etc/hadoop/core-site.xml
+
+<property>
+     <name>hadoop.proxyuser.ubuntu.hosts</name>
+     <value>*</value>
+</property>
+ 
+<property>
+     <name>hadoop.proxyuser.ubuntu.groups</name>
+     <value>*</value>
+</property>
+
+
+Then on master node
+cd ~/hadoop-2.6.5
+
+sbin/start-dfs.sh 
+sbin/start-yarn.sh
+
+
+cd ~/oozie-4.1.0/conf
+
+#the username and password should be the same as the setting later and we need to disable SSL since the sql version is new.
+
+vim oozie-site.xml
+<property>
+    <name>oozie.service.JPAService.jdbc.driver</name>
+    <value>com.mysql.cj.jdbc.Driver</value>
+</property>
+ 
+
+<property>
+    <name>oozie.service.JPAService.jdbc.url</name>
+    <value>jdbc:mysql://localhost:3306/oozie?useSSL=false</value>
+</property>
+ 
+ 
+<property>
+    <name>oozie.service.JPAService.jdbc.username</name>
+    <value>oozie</value>
+</property>
+ 
+ 
+<property>
+    <name>oozie.service.JPAService.jdbc.password</name>
+    <value>mysql</value>
+</property>
+ 
+ 
+<property>
+    <name>oozie.service.HadoopAccessorService.hadoop.configurations</name>
+    <value>*=/home/ubuntu/hadoop-2.6.5/etc/hadoop</value>
+</property>
+ 
+ 
+<property>
+    <name>oozie.service.WorkflowAppService.system.libpath</name>
+    <value>hdfs://master:9000/user/ubuntu/share/lib</value>
+</property>
+
+
+mysql -uroot -p
+
+enter password(in previous step, we tpye 'root', so here the password is 'root')
+
+CREATE DATABASE oozie;
+CREATE USER 'oozie'@'%' IDENTIFIED BY 'mysql';
+GRANT ALL ON oozie.* TO 'oozie'@'%';
+FLUSH privileges;
+exit
+
+cd ~
+
+//here download two files and move these two files into libext folder later
+wget https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.11/mysql-connector-java-8.0.11.jar
+wget http://archive.cloudera.com/gplextras/misc/ext-2.2.zip
+
+Then we go to oozie folder
+
+cd ~/oozie-4.1.0/
+mkdir libext
+
+cp ../hadoop-2.6.5/share/hadoop/*/lib/*.jar libext/
+cp ../hadoop-2.6.5/share/hadoop/*/*.jar libext/
+
+
+cp ../mysql-connector-java-8.0.11.jar libext/
+cp ../ext-2.2.zip libext/
+
+
+cd libext
+mv servlet-api-2.5.jar servlet-api-2.5.jar.bak
+mv jsp-api-2.1.jar jsp-api-2.1.jar.bak
+mv jasper-compiler-5.5.23.jar jasper-compiler-5.5.23.jar.bak
+mv jasper-runtime-5.5.23.jar jasper-runtime-5.5.23.jar.bak
+mv slf4j-log4j12-1.7.5.jar slf4j-log4j12-1.7.5.jar.bak
+
+
+
+Then come back to Oozie folder
+cd ~/oozie-4.1.0/
+
+sudo apt-get install zip
+sudo apt-get install unzip
+
+bin/oozie-setup.sh prepare-war
+
+vim conf/oozie-env.sh
+
+# Set Java home and hadoop prefix  
+export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+export OOZIE_PREFIX=/home/ubuntu/oozie-4.1.0
+ 
+ 
+# Set hadoop configuration path  
+export OOZIE_CONF_DIR=/home/ubuntu/oozie-4.1.0/conf/
+export OOZIE_HOME=/home/ubuntu/oozie-4.1.0
+ 
+ 
+# add hadoop package 
+export CLASSPATH=$CLASSPATH:$OOZIE_HOME/libext/*.jar
+
+
+source conf/oozie-env.sh
+
+
+tar -xzvf oozie-sharelib-4.1.0.tar.gz
+cd ~/hadoop-2.6.5
+
+bin/hdfs dfs -mkdir /user
+bin/hdfs dfs -mkdir /user/ubuntu
+bin/hdfs dfs -put ../oozie-4.1.0/share /user/ubuntu/
+
+before start oozie must start dfs yarn and history server then connect the mysql
+(you should already started dfs and yarn)
+cd ~/hadoop-2.6.5
+#skip these following two commands
+sbin/start-dfs.sh
+sbin/start-yarn.sh
+
+
+sbin/mr-jobhistory-daemon.sh start historyserver
+
+cd ~/oozie-4.1.0
+bin/ooziedb.sh create -sqlfile oozie.sql -run
+
+
+
+Finally, we can start Oozie now.
+bin/oozied.sh start
+
+#to see the status of Oozie, here you could see System mode: NORMAL
+bin/oozie admin --oozie http://localhost:11000/oozie -status
+
+
+
+########Then we can run some example codes:
+
+tar -xzvf oozie-examples.tar.gz
+
+vim examples/apps/map-reduce/job.properties
+modify namenode and jobtracker
+
+Refer to configuration in Hadoop
+master:9000 (core-site.xml)
+master:8032 (yanr.resourcemanager.address in yarn-site.xml)
+
+export OOZIE_URL=http://localhost:11000/oozie
+
+
+put the examples to hdfs
+cd ~/hadoop-2.6.5
+bin/hdfs dfs -put ../oozie-4.1.0/examples/ /user/ubuntu/
+
+Come back to Oozie folder and then you can execute
+cd ~/oozie-4.1.0
+bin/oozie job -oozie  http://localhost:11000/oozie -config examples/apps/map-reduce/job.properties -run
+
+Then you will see the job ID, for my example, it is job: 0000000-230502071131377-oozie-ubun-W
+
+#You could use this command to see the status of the job or skip this, use the ID of your job
+bin/oozie job -oozie http://localhost:11000/oozie -info 0000000-230502071131377-oozie-ubun-W
+
+#Finally, you could see SUCCEEDED, congratulations!
+
+#to see the results, you could follow these commands or use the similar way what we have done before in Hadoop wordcount example.
+cd ~/hadoop-2.6.5
+bin/hdfs dfs -cat /user/ubuntu/examples/output-data/map-reduce/part-00000
+
+#or use get command first and show the results, similar to what we have done in wordcount example
+cd ~/hadoop-2.6.5
+bin/hdfs dfs -get /user/ubuntu/examples/output-data/map-reduce
+cd map-reduce
+cat part-00000
+
+Then we are done.
